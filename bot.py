@@ -4,7 +4,7 @@ import telebot   # библитека для работы с telegramm
 import re
 
 # Token для телеграмм бота
-bot = telebot.TeleBot("TELEGRAM_TOKEN")
+bot = telebot.TeleBot(1842966012:AAHxslAEYn0zFaGaJbeK7eggj_3RNQtgaJY)
 
 # подключаемся к базе данных подпищиков
 connection = sqlite3.connect("./db/database_id.db", check_same_thread=False)
