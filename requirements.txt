@@ -1,1 +1,1 @@
-# git+https://github.com/eternnoir/pyTelegramBotAPI.git
+git+https://github.com/mullwar/telebot.git
