@@ -10,7 +10,7 @@ token = "TELEGRAM_TOKEN"
 bot = telebot.TeleBot(token)
 
 # подключаемся к базе данных подпищиков
-connection = sqlite3.connect("/home/pi/telegramm/db/database_id.db", check_same_thread=False)
+connection = sqlite3.connect("./db/database_id.db", check_same_thread=False)
 cursor = connection.cursor()
 
 # массив для хранения ID сообщений для авторизированого пользователя
