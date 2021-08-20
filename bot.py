@@ -3,6 +3,7 @@ from telebot import types
 
 # Token для телеграмм бота
 token = 'TELEGRAM_TOKEN'
+bot = telebot.Telebot
 
 # Обрабатываем команду /start
 @bot.message_handler(commands=['start'])
