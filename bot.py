@@ -6,9 +6,9 @@ from telebot import types
 # s3 = S3Connection(os.environ['TELEGRAM_TOKEN'])
 
 # Token для телеграмм бота
-# token = ''
-print ("token: ", TELEGRAM_TOKEN)
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
+token = 'TELEGRAM_TOKEN'
+print ("token: ", token)
+bot = telebot.TeleBot(telegram_token)
 
 # Обрабатываем команду /start
 @bot.message_handler(commands=['start'])
