@@ -1,9 +1,7 @@
 import telebot   # библитека для работы с telegramm
 
 # Token для телеграмм бота
-token = "TELEGRAM_TOKEN"
-bot = telebot.TeleBot(token)
-
+token = TELEGRAM_TOKEN
 
 # Обрабатываем команду /start
 @bot.message_handler(commands=['start'])
