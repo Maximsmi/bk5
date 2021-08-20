@@ -1,5 +1,6 @@
 import telebot   # библитека для работы с telegramm
 from telebot import types
+import os
 
 # import boto
 # from boto.s3.connection import S3Connection
