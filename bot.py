@@ -9,7 +9,7 @@ import os
 # Token для телеграмм бота
 token = 'TELEGRAM_TOKEN'
 print ("token: ", token)
-bot = telebot.TeleBot(telegram_token)
+bot = telebot.TeleBot('TELEGRAM_TOKEN')
 
 # Обрабатываем команду /start
 @bot.message_handler(commands=['start'])
