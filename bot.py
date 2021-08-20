@@ -1,4 +1,5 @@
 import telebot   # библитека для работы с telegramm
+from telebot import types
 
 # Token для телеграмм бота
 token = 'TELEGRAM_TOKEN'
