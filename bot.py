@@ -1,7 +1,7 @@
 import telebot   # библитека для работы с telegramm
 import os
 
-token = 'TELEGRAM_TOKEN'
+token = 't_token_bk5'
 
 # Token для телеграмм бота
 # token = 'TELEGRAM_TOKEN'
