@@ -1,11 +1,9 @@
 import telebot   # библитека для работы с telegramm
 import os
 
-token = 't_token_bk5'
-
 # Token для телеграмм бота
 # token = 'TELEGRAM_TOKEN'
-bot = telebot.TeleBot(token)
+bot = telebot.TeleBot('t_token_bk5')
 
 
 # Обрабатываем команду /start
