@@ -2,7 +2,7 @@ import telebot   # библитека для работы с telegramm
 import os
 
 from os import environ
-from dotenv import load_dotenv()
+from dotenv import load_dotenv
 
 load_dotenv()
 environ.get('t_token_bk5')
