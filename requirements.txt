@@ -1,1 +1,2 @@
 pyTelegramBotAPI
+pytnon-dotenv
