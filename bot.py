@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 load_dotenv()
 environ.get('t_token_bk5')
 
-from config import (t_token_bk5)
 # Token для телеграмм бота
 # token = 'TELEGRAM_TOKEN'
 #bot = telebot.TeleBot('t_token_bk5')
