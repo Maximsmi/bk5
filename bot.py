@@ -26,12 +26,10 @@ DBNAME = environ.get('DBNAME') #имя базы данных
 HOST = environ.get('HOST')
 PASSWORD = environ.get('PASSWORD')
 PORT = environ.get('PORT')
+DATABASE_URL =  environ.get('DATABASE_URL')
 
 # Подключение к существующей базе данных
-connection = psycopg2.connect(user=DBNAME,
-                              password=PASSWORD,
-                              host=HOST,
-                              port=PORT)
+connection = psycopg2.connect(DATABASE_URL)
 cursor = connection.cursor()
 
 # -------------------------------- Создание таблиц в базе если их нет ----------------------------------------------------    
