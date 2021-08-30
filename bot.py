@@ -3,74 +3,81 @@ import sqlite3   # библиотека баз данных
 import telebot   # библитека для работы с telegramm
 import re
 import time
-
+import os
+import psycopg2
+from psycopg2 import Error
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from psycopg2 import sql
 
 from os import environ
 from dotenv import load_dotenv
 
+# Token для телеграмм бота
 load_dotenv()
 token = environ.get('TELEGRAM_TOKEN')
 
 # Token для телеграмм бота
-# token = 'TELEGRAM_TOKEN'
-#bot = telebot.TeleBot(token)
-#print(token)
-
-# Token для телеграмм бота
 bot = telebot.TeleBot(token)
-
+# 
 # подключаемся к базе данных подпищиков
-connection = sqlite3.connect("./db/database_id.db", check_same_thread=False)
+#Данные для подключения к базе данных
+# база данных на PostgreSQL
+DBNAME = environ.get('DBNAME') #имя базы данных 
+HOST = environ.get('HOST')
+PASSWORD = environ.get('PASSWORD')
+PORT = environ.get('PORT')
+
+# Подключение к существующей базе данных
+connection = psycopg2.connect(user=DBNAME,
+                              password=PASSWORD,
+                              host=HOST,
+                              port=PORT)
 cursor = connection.cursor()
 
+# -------------------------------- Создание таблиц в базе если их нет ----------------------------------------------------    
+
 # массив для хранения ID сообщений для авторизированого пользователя
-cursor.execute('''CREATE TABLE IF NOT EXISTS menu_user_id (\
-                                                            user_id INT PRIMARY KEY,\
-                                                            menu_id TEXT,\
+cursor.execute('''CREATE TABLE IF NOT EXISTS menu_user_id ( user_id INT PRIMARY KEY,
+                                                            menu_id TEXT,
                                                             keyword TEXT);''')
 
 # массив для хранения сообщений от пользователей для совета дома и дмина
-cursor.execute('''CREATE TABLE IF NOT EXISTS user_to_admin (\
-                                                            id INTEGER PRIMARY KEY AUTOINCREMENT,\
-                                                            user_id TEXT,\
-                                                            from_id TEXT,\
-                                                            date TEXT,\
-                                                            text TEXT);''')
+cursor.execute('''CREATE TABLE IF NOT EXISTS user_to_admin ( id SERIAL,
+                                                             user_id TEXT,
+                                                             from_id TEXT,
+                                                             date TEXT,
+                                                             text TEXT);''')
 
 # массив для хранения сообщений от совета дома и дмина для пользователей
-cursor.execute('''CREATE TABLE IF NOT EXISTS user_to_admin (\
-                                                            id INTEGER PRIMARY KEY AUTOINCREMENT,\
-                                                            user_id TEXT,\
-                                                            from_id TEXT,\
-                                                            date TEXT,\
-                                                            text TEXT);''')
+cursor.execute('''CREATE TABLE IF NOT EXISTS admin_to_user ( id SERIAL,
+                                                             user_id TEXT,
+                                                             from_id TEXT,
+                                                             date TEXT,
+                                                             text TEXT);''')
 
 # массив для хранения ID сообщений для авторизированого пользователя
-cursor.execute('''CREATE TABLE IF NOT EXISTS message_id ( \
-                        id_n INTEGER PRIMARY KEY AUTOINCREMENT,\
-                        date TEXT,\
-                        user_id TEXT,\
-                        mess_id TEXT,\
-                        text TEXT);''')
+cursor.execute('''CREATE TABLE IF NOT EXISTS message_id ( id_n SERIAL,
+                                                          date TEXT,
+                                                          user_id TEXT,
+                                                          mess_id TEXT,
+                                                          text TEXT);''')
 
 # массив для хранения ID сообщений для неавторизированого пользователя
-cursor.execute('''CREATE TABLE IF NOT EXISTS users_green ( \
-                        id_n INTEGER PRIMARY KEY AUTOINCREMENT,\
-                        user_id TEXT,\
-                        send_user_id TEXT,\
-                        mess_id TEXT,\
-                        user_name TEXT,\
-                        user_surname TEXT,\
-                        text TEXT);''')
+cursor.execute('''CREATE TABLE IF NOT EXISTS users_green ( id_n SERIAL,
+                                                           user_id TEXT,
+                                                           send_user_id TEXT,
+                                                           mess_id TEXT,
+                                                           user_name TEXT,
+                                                           user_surname TEXT,
+                                                           text TEXT);''')
 
 # проверяем есть ли таблица в базе, если нет то создаем
-cursor.execute('''CREATE TABLE IF NOT EXISTS users ( \
-                        user_id INT PRIMARY KEY,\
-                        user_name TEXT,\
-                        user_surname TEXT,\
-                        username TEXT,\
-                        user_kv TEXT,\
-                        phonenumber TEXT);''')
+cursor.execute('''CREATE TABLE IF NOT EXISTS users ( user_id INT PRIMARY KEY,
+                                                     user_name TEXT,
+                                                     user_surname TEXT,
+                                                     username TEXT,
+                                                     user_kv TEXT,
+                                                     phonenumber TEXT);''')
 
 # проверяем есть ли база, если нет то создаем
 #  id - id записи в базе,
@@ -82,21 +89,90 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS users ( \
 #  user_last_name - данные о юзере
 #  date - ????
 #  mess_text - текст сообщения  
-cursor.execute('''CREATE TABLE IF NOT EXISTS messages( id INT PRIMARY KEY,\
-                        mess_id TEXT,\
-                        content_type TEXT,\
-                        user_id TEXT,\
-                        user_first_name TEXT,\
-                        user_username TEXT,\
-                        user_last_name TEXT,\
-                        date TEXT,\
-                        mess_text TEXT);''')
+cursor.execute('''CREATE TABLE IF NOT EXISTS messages( id INT PRIMARY KEY,
+                                                       mess_id TEXT,
+                                                       content_type TEXT,
+                                                       user_id TEXT,
+                                                       user_first_name TEXT,
+                                                       user_username TEXT,
+                                                       user_last_name TEXT,
+                                                       date TEXT,
+                                                       mess_text TEXT);''')
 
 # проверяем есть ли таблица в базе, если нет то создаем
 # таблица стандартного текста для ответов
-cursor.execute('''CREATE TABLE IF NOT EXISTS mess ( id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, text TEXT, group_id TEXT, description TEXT);''')
+cursor.execute('''CREATE TABLE IF NOT EXISTS mess ( id SERIAL,
+                                                    title TEXT,
+                                                    text TEXT,
+                                                    group_id TEXT,
+                                                    description TEXT);''')
 
-connection.commit()
+# проверяем есть ли таблица в базе, если нет то создаем
+# список ID администраторов и принадлежность к группе
+# user_id - ID пользователя;
+# admin BOOL - администраторы бота;
+# sov_dom BOOL - пользователи в совете дома;
+# uk BOOL - пользователи от управляющей компании;
+# dvor BOOL - поьзователи от уборки дома;
+# konserj BOOL - пользователи от коньсъержек;
+# ohrana BOOL - пользователи от охраны дома
+cursor.execute('''CREATE TABLE IF NOT EXISTS admin_table ( user_id INT PRIMARY KEY,
+                                                           admin BOOL,
+                                                           sov_dom BOOL,
+                                                           uk BOOL,
+                                                           dvor BOOL,
+                                                           konserj BOOL,
+                                                           ohrana BOOL);''')
+
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS admin_table_name ( name TEXT PRIMARY KEY,
+                                                                text TEXT,
+                                                                description TEXT);''')
+
+# Таблица список доступных команд для пользователей и администраторов
+# id SERIAL - № п/п
+# command TEXT - имя комманды
+# text TEXT - поясняющий текст
+# user BOOL - метка принадлежности для юзера
+# admin BOOL - метка принадлежности для админа
+# description TEXT - коментарий
+cursor.execute('''CREATE TABLE IF NOT EXISTS command ( id SERIAL,
+                                                       command TEXT,
+                                                       text TEXT,
+                                                       user_flag BOOL,
+                                                       admin_flag BOOL,
+                                                       description TEXT);''')
+
+# Таблица, список меню для зарегистрированных пользователей
+# id SERIAL - № п/п
+# name TEXT - название кнопки
+# keyword TEXT - сокращеное название
+# group_id TEXT - индификатор группы
+# text TEXT - текст для пользователя
+# next_group TEXT - ID для перехода к группе
+# description TEXT - описание
+# onoff BOOL - вкл/выкл отображения у пользователя
+cursor.execute('''CREATE TABLE IF NOT EXISTS menu_user ( id SERIAL,
+                                                         name TEXT,
+                                                         keyword TEXT,
+                                                         group_id TEXT,
+                                                         text TEXT,
+                                                         next_group TEXT,
+                                                         description TEXT,
+                                                         onoff BOOL);''')
+
+# Таблица, список перехода пользователя по группам меню
+# user_id INT PRIMARY KEY - id пользователя
+# menu_id TEXT - id группы меню
+# keyword TEXT - сокращеное название
+cursor.execute('''CREATE TABLE IF NOT EXISTS menu_user_id ( user_id INT PRIMARY KEY,
+                                                            menu_id TEXT,
+                                                            keyword TEXT);''')
+
+
+connection.commit() # сохраняем изменения в базе
+# --------------------------------КОНЕЦ - Создание таблиц в базе если их нет----------------------------------------------------    
+
 
 # процедура занесения данных о пользователе в базу данных
 # таблица сообщений не зарегистрированного пользователя
@@ -106,7 +182,10 @@ connection.commit()
 # group: str - группа,
 # description: str  -  описание
 def read_text_mess (title: str):
-    cursor.execute("SELECT * FROM mess WHERE title = ?", [(title)])
+    cursor.execute(''' SELECT *
+                       FROM mess
+                       WHERE title = %s;
+                    ''', [(title)])
     records = cursor.fetchone()
     print(records)  # выводим все значения таблицы на экран
     return (records)
@@ -123,7 +202,7 @@ def read_text_mess (title: str):
 #    records = cursor.fetchone()
 #    print(records)  # выводим все значения таблицы на экран
 #    return (records)
-
+    #insert = sql.SQL('INSERT INTO city (code, name, country_name) VALUES {}').format(sql.SQL(',').join(map(sql.Literal, values)))
 
 # процедура занесения данных о пользователе в базу данных
 # таблица сообщений не зарегистрированного пользователя
@@ -133,10 +212,16 @@ def read_text_mess (title: str):
 # user_surname: str - фамилия пользователя,
 # text: str  -  текст
 def db_table_val_users_green (user_id: str, send_user_id: str,  mess_id: str, user_name:str, user_surname:str, text:str):
-    cursor.execute("INSERT INTO users_green ( user_id, send_user_id, mess_id, user_name, user_surname, text) VALUES (?,?,?,?,?,?);",\
-                       (user_id, send_user_id, mess_id, user_name, user_surname, text))
+    
+    #columns = [user_id, send_user_id, mess_id, user_name, user_surname, text]
+    
+    insert = '''INSERT
+                INTO users_green (user_id, send_user_id, mess_id, user_name, user_surname, text)
+                VALUES (%s, %s, %s, %s, %s, %s)
+             '''
+    cursor.execute(insert, (user_id, send_user_id, mess_id, user_name, user_surname, text))
     connection.commit() # сохраняем изменения в таблице
-    cursor.execute("SELECT * FROM users_green ")  # Выбираем все значения в таблице
+    cursor.execute('SELECT * FROM users_green ')  # Выбираем все значения в таблице
     print(cursor.fetchall())  # выводим все значения таблицы на экран
 
 # процедура занесения данных о пользователе в базу данных
@@ -153,27 +238,42 @@ def db_table_menu_user_id (user_id: str, menu_id: str, keyword: str, flag: int):
     print (" > keyword: ", keyword)
     print (" > flag: ", flag)
     if flag == 1:
-        sql = "SELECT * FROM menu_user_id WHERE user_id = ?"
+        sql = ''' SELECT *
+                  FROM menu_user_id
+                  WHERE user_id = '%s'
+              '''
         cursor.execute(sql, [(user_id)])
         records = cursor.fetchone()
         menu_id = 1
         if (records == None):
-            cursor.execute("INSERT INTO menu_user_id ( user_id, menu_id, keyword) VALUES (?,?,?);", (user_id, menu_id, keyword))
+            cursor.execute(''' INSERT INTO menu_user_id ( user_id, menu_id, keyword) VALUES (%s,%s,%s);''', (user_id, menu_id, keyword))
             print ("    >> добавление в базу menu_user_id: ", user_id, "  menu_id: ", menu_id, "  keyword: ", keyword)
         else:
-            sql = """UPDATE menu_user_id SET menu_id = ? WHERE user_id = ?, keyword = ? """
+            sql = '''UPDATE menu_user_id
+                     SET menu_id = '%s'
+                     WHERE user_id = '%s', keyword = %s
+                  '''
             cursor.execute(sql, (menu_id, user_id, keyword))
             print ("    >> Пользователь есть в базе menu_user_id! Настройки сброшены!")
     elif flag == 2:
-        sql = "SELECT * FROM menu_user_id WHERE user_id = ?"
+        sql = ''' SELECT *
+                  FROM menu_user_id
+                  WHERE user_id = '%s'
+              '''
         cursor.execute(sql, [(user_id)])
         records = cursor.fetchone()
         if not (records == None):
-            sql = """UPDATE menu_user_id SET menu_id = ?, keyword = ? WHERE user_id = ?"""
+            sql = ''' UPDATE menu_user_id
+                      SET menu_id = '%s', keyword = %s
+                      WHERE user_id = '%s'
+                  '''
             cursor.execute(sql, (menu_id, keyword,  user_id))
             print ("    >> в таблице menu_user_id! Изменены данные: ",user_id,",  menu_id: " ,menu_id,",  keyword: " ,keyword)
     elif flag == 3:
-        sql = "DELETE FROM menu_user_id WHERE user_id = ?"
+        sql = ''' DELETE
+                  FROM menu_user_id
+                  WHERE user_id = '%s'
+              '''
         cursor.execute(sql, [(user_id)])
         print ("    >> в таблице menu_user_id! Удалены данные пользователя: ",user_id)
    
@@ -184,8 +284,15 @@ def db_table_menu_user_id (user_id: str, menu_id: str, keyword: str, flag: int):
 # user_id: str   -  id пользователя,
 # mess_id: str   -  id сообщения пользователя,
 def db_table_message_id (date:str, user_id: str, mess_id: str, text: str):
-    cursor.execute("INSERT INTO message_id ( date, user_id, mess_id, text) VALUES (?,?,?,?);", (date, user_id, mess_id, text))
+    print ("")
+    print ("def db_table_message_id:")
+    sql = ''' INSERT
+              INTO message_id ( date, user_id, mess_id, text)
+              VALUES (%s, %s, %s, %s);
+          '''
+    cursor.execute(sql, (date, user_id, mess_id, text))
     connection.commit() # сохраняем изменения в таблице    
+
 
 def db_table_message_id_dell (user_id: str):
     sql = "SELECT * FROM message_id WHERE user_id = ?"
@@ -209,15 +316,21 @@ def db_table_message_id_dell (user_id: str):
 # user_kv  -  номер квартиры пользоваателя,
 # phonenumber  -  номер телефона пользователя
 def db_table_val (user_id: int, user_name: str, user_surname: str, username: str, user_kv: str, phonenumber: str):
-    cursor.execute("INSERT INTO users ( user_id,\
-                                        user_name,\
-                                        user_surname,\
-                                        username,\
-                                        user_kv,\
-                                        phonenumber) VALUES (?, ?, ?, ?, ?, ?);", \
-                                        (user_id, user_name, user_surname, username, user_kv, phonenumber))           
+    print ("")
+    print ("def db_table_val():")
+    sql = ''' INSERT INTO users ( user_id,
+                                  user_name,
+                                  user_surname,
+                                  username,
+                                  user_kv,
+                                  phonenumber)
+              VALUES (%s, %s, %s, %s, %s, %s);
+           '''
+    cursor.execute(sql, (user_id, user_name, user_surname, username, user_kv, phonenumber))           
     connection.commit()
-    cursor.execute("SELECT * FROM users ")
+    cursor.execute(''' SELECT *
+                       FROM users
+                   ''')
     print(cursor.fetchall())
 
 # процедура занесения данных о сообщениях в базу данных
@@ -242,25 +355,21 @@ def db_table_val_mess (mess_id: str, content_type: str,\
 
 unknown_text: str = "Ничего не понятно, но очень интересно.\nПопробуй команду /help"
 
-#  Ответ на любое неожидаемое сообщение"""
-#@bot.message_handler()
-#async def unknown_message(message):
-#     await message.answer(msg.unknown_text, reply_markup=s.MAIN_KB)
-
 # Обрабатываем команду /start
 @bot.message_handler(commands=['start'])
 def ferst_message(message):
-    
-    print ("Яляется ли пользователь ботом = ", message.from_user.is_bot)
+    print ("")
+    print ("def ferst_message(message):")
+    print ("  >> Яляется ли пользователь ботом = ", message.from_user.is_bot)
     if not(message.from_user.is_bot):  # Проверяем является ользователь ботом или нет
         # проверяем есть ли пользователь в базе зарегистрированных
-        sql = "SELECT * FROM users WHERE user_id = ?"
+        sql = '''SELECT * FROM users WHERE user_id = %s'''
         cursor.execute(sql, [(message.from_user.id)])
         records = cursor.fetchone()
-        print ("message.from_user.id = ", message.from_user.id)
-        print ("Есть ли пользователь в базе = ", records)
+        print ("  >> message.from_user.id = ", message.from_user.id)
+        print ("  >> Есть ли пользователь в базе = ", records)
         if not (records == None):
-            print ("К боту присоединился: ", records [1], " ", records [2], " из квартиры: ", records [4])
+            print ("    >> К боту присоединился: ", records [1], " ", records [2], " из квартиры: ", records [4])
             welcome_message (message)
         else:
             start_message (message)
@@ -270,7 +379,14 @@ def ferst_message(message):
 def stop_message(message):
     print ("Яляется ли пользователь ботом = ", message.from_user.is_bot)
     bot.send_message(message.chat.id, "Раздел находиться в разработке!")
- 
+
+# Обрабатываем команду /stop
+#@bot.message_handler(commands=['upp'])
+#def stop_message(message):
+#    sql = ''' UPDATE menu_user SET keyword = 'admin' WHERE keyword = 'admin_bot';'''
+#    cursor.execute(sql)
+#    connection.commit()
+
 #if not(message.from_user.is_bot):  # Проверяем является ользователь ботом или нет
         # проверяем есть ли пользователь в базе зарегистрированных
     #    sql = "SELECT * FROM users WHERE user_id = ?"
@@ -300,18 +416,28 @@ def help_message(message):
         #bot.send_message(message.chat.id, "Раздел находиться в разработке!")
     
         # проверка есть ли пользователь в списке админив или нет
-        sql = "SELECT * FROM admin_table WHERE id_user = ?"  # находим в таблице меню список пунктов 
+        sql = '''SELECT *
+                 FROM admin_table
+                 WHERE user_id = '%s'
+              ''' # находим в таблице меню список пунктов 
         cursor.execute(sql, [(user_id)]) #, {"row_id": from_mess})
         records_id = cursor.fetchone()
         print ("  >> records_id: ", records_id)
+        
         # проверка есть ли пользователь в списке зарегистрированных 
-        sql = "SELECT * FROM users WHERE user_id = ?"  # находим в таблице меню список пунктов 
+        sql = ''' SELECT *
+                  FROM users
+                  WHERE user_id = '%s'
+              ''' # находим в таблице меню список пунктов 
         cursor.execute(sql, [(user_id)]) #, {"row_id": from_mess})
         records_user = cursor.fetchone()
         print ("  >> records_user: ", records_user)
         if not (records_id == None):
             print ("    >> Пользователь присутствует в базе админов!")
-            sql = "SELECT * FROM command_bot WHERE admin = 'true'"  # находим в таблице меню список пунктов 
+            sql = ''' SELECT *
+                      FROM command
+                      WHERE admin_flag = 'true'
+                  '''  # находим в таблице меню список пунктов 
             cursor.execute(sql)
             records_com = cursor.fetchall()
             print ("  >> /help >> команды:" )
@@ -325,7 +451,10 @@ def help_message(message):
             print ("  >> user_id: ", res.chat.id, "  text:", res.text)
         elif not (records_user == None):
             print ("    >> Пользователь присутствует в базе пользователей!")
-            sql = "SELECT * FROM command_bot WHERE user = 'true'"  # находим в таблице меню список пунктов 
+            sql = ''' SELECT *
+                      FROM command
+                      WHERE user_flag = 'true'
+                  '''  # находим в таблице меню список пунктов 
             cursor.execute(sql)
             records_com = cursor.fetchall()
             print ("  >> /help >> команды:" )
@@ -342,10 +471,6 @@ def help_message(message):
             res = bot.send_message(user_id, 'Вам доступна комманда: /start', reply_markup=telebot.types.ReplyKeyboardRemove())
             print (" > >  message: ", res)
             print ("  >> user_id: ", res.chat.id, "  text:", res.text)
-
-            
-            
-
             
 # --------------------------------КОНЕЦ - Обрабатываем команду /help ---------------------------------------------    
 
@@ -365,7 +490,10 @@ def send_all_message(message):
         #bot.send_message(message.chat.id, "Раздел находиться в разработке!")
     
         # проверка есть ли пользователь в списке админив или нет
-        sql = "SELECT * FROM admin_table WHERE id_user = ?"  # находим в таблице меню список пунктов 
+        sql = ''' SELECT *
+                  FROM admin_table
+                  WHERE user_id = %s;
+              ''' # находим в таблице меню список пунктов 
         cursor.execute(sql, [(user_id)]) #, {"row_id": from_mess})
         records_id = cursor.fetchone()
         print ("  >> records_id: ", records_id)
@@ -415,29 +543,40 @@ def mess_true_text(message):
     text = message.text
     print ("  >> user_id: ", user_id, "  text:", text)
     # Определим от чьего имени отправим текст
-    sql = "SELECT * FROM admin_table WHERE id_user = ?"  # находим в таблице меню список пунктов 
+    sql = ''' SELECT *
+              FROM admin_table
+              WHERE user_id = %s
+          ''' # находим в таблице меню список пунктов 
     cursor.execute(sql, [(user_id)]) #, {"row_id": from_mess})
     records_id = cursor.fetchone()
     print ("  >> records_id: ", records_id)
 
-    sql = "SELECT * FROM admin_table WHERE id_user = '0'"  # находим в таблице меню список пунктов 
-    cursor.execute(sql) #, {"row_id": from_mess})
-    records_data = cursor.fetchone()
-    print ("  >> records_data: ", records_data)
     
     i: int = 0
     for row in records_id:
-        if row == "true":
+        if row == True:
             user_sdmin_id = i
-            print ("    >> отправитель: " + str (user_sdmin_id) + ",  row: " + str(row) + ",  data: " + str(records_data[i]))
+            print ("    >> отправитель: " + str (user_sdmin_id) + ",  row: " + str(row))
             break
         i = i+1
-    
-    sql = "SELECT user_id FROM users"  # находим в таблице меню список пунктов 
+
+    print ("  >> user_sdmin_id: ", str(user_sdmin_id))
+    sql = ''' SELECT *
+              FROM admin_table_name
+              WHERE id = %s;
+          ''' # находим в таблице меню список пунктов 
+    cursor.execute(sql, str(user_sdmin_id)) #, {"row_id": from_mess})
+    records_data = cursor.fetchone()
+    print ("  >> records_data: ", records_data)
+
+
+    sql = ''' SELECT user_id
+              FROM users
+          '''  # находим в таблице меню список пунктов 
     cursor.execute(sql) #, {"row_id": from_mess})
     records_users = cursor.fetchall()
-    print ("  >> records_data: ", records_users)
-    text = text + "\nС уважением, " + str(records_data[i]) + "!"
+    print ("  >> records_users: ", records_users)
+    text = text + "\nС уважением, " + str(records_data[1]) + "!"
     print ("text: ", text)
     # Рассылка сообщений пользователям
     i=0
@@ -458,12 +597,17 @@ def mess_true_text(message):
 def dell_user(message):
     user_id = message.from_user.id
     print ("")
-    print ("dell_user:")
+    print ("def dell_user:")
     print (" > user_id: ", user_id)
-    sql = "DELETE FROM users WHERE user_id = ?"
+    sql = ''' DELETE FROM users
+              WHERE user_id = '%s'
+          '''
     cursor.execute(sql, [(user_id)])
     connection.commit()
-    sql = "DELETE FROM users_green WHERE user_id = ?"
+    
+    sql = ''' DELETE FROM users_green
+              WHERE user_id = '%s'
+          '''
     cursor.execute(sql, [(user_id)])
     connection.commit()
 
@@ -588,6 +732,8 @@ def get_answer_start (query):
                               res.text)
 
 def type_nomber_kv (message):
+    print ("")
+    print ("def type_nomber_kv (message):")
     res = bot.send_message ( message.chat.id, 'Теперь введите № квартиры: '); #, reply_markup=keyboard )
     db_table_val_users_green ( message.chat.id,\
                                res.from_user.id,\
@@ -598,6 +744,8 @@ def type_nomber_kv (message):
     bot.register_next_step_handler(res , kv)
 
 def kv(message):
+    print ("")
+    print ("def kv(message):")
     kv = message.text
     db_table_val_users_green ( message.chat.id,\
                                message.from_user.id,\
@@ -608,7 +756,7 @@ def kv(message):
 
     if kv.isdigit():  # проверяем являеться ли числом введеное значение
         kv_2 = int(kv)
-        print ("Номер квартиры: ", kv)
+        print ("  >> Номер квартиры: ", kv)
         if (kv_2 > 0) and (kv_2 < 753):
             dell_message (message)
             bot.send_message ( message.chat.id, ' Вы ввели № квартиры - ' + kv )
@@ -619,13 +767,16 @@ def kv(message):
             us_sname = message.from_user.last_name
             username = message.from_user.username
             
-            print ("id = ", us_id)
-            print ("first_name = ", us_name)
-            print ("last_name = ", us_sname)
-            print ("username = ", username)
-            print ("kv = ", kv)
+            print ("    >> id = ", us_id)
+            print ("    >> first_name = ", us_name)
+            print ("    >> last_name = ", us_sname)
+            print ("    >> username = ", username)
+            print ("    >> kv = ", kv)
          
-            sql = """SELECT * FROM users WHERE user_id=?"""
+            sql = ''' SELECT *
+                      FROM users
+                      WHERE user_id='%s'
+                  '''
             cursor.execute(sql, [(us_id)])
             res = cursor.fetchone()
             print(res) # or use fetchone()
@@ -645,34 +796,34 @@ def kv(message):
             keyboard.add(button_phone, otkaz)
             res = bot.send_message(message.chat.id, "Не хотите поделиться своим номером телефона?", reply_markup=keyboard)
             db_table_val_users_green ( message.chat.id,\
-                                               res.from_user.id,\
-                                               res.message_id,\
-                                               res.from_user.first_name,\
-                                               res.from_user.last_name,\
-                                               res.text)
+                                       res.from_user.id,\
+                                       res.message_id,\
+                                       res.from_user.first_name,\
+                                       res.from_user.last_name,\
+                                       res.text)
 
         else:
             dell_message (message)
-            print ("Введен не корректный номер квартиры")
+            print ("  >> Введен не корректный номер квартиры")
             res = bot.send_message ( message.chat.id, ' Вы указали неверный номер квартиры. Попробуйте еще.' )
             db_table_val_users_green ( message.chat.id,\
-                               res.from_user.id,\
-                               res.message_id,\
-                               res.from_user.first_name,\
-                               res.from_user.last_name,\
-                               res.text)
+                                       res.from_user.id,\
+                                       res.message_id,\
+                                       res.from_user.first_name,\
+                                       res.from_user.last_name,\
+                                       res.text)
 
             type_nomber_kv (res)
     else:
         dell_message (message)
-        print ("Введен не корректный номер квартиры")
+        print ("  >> Введен не корректный номер квартиры")
         res = bot.send_message ( message.chat.id, ' Вы указали неверный номер квартиры. Воспользуйтесь коммандой: /start.' )
         db_table_val_users_green ( message.chat.id,\
-                               res.from_user.id,\
-                               res.message_id,\
-                               res.from_user.first_name,\
-                               res.from_user.last_name,\
-                               res.text)
+                                   res.from_user.id,\
+                                   res.message_id,\
+                                   res.from_user.first_name,\
+                                   res.from_user.last_name,\
+                                   res.text)
 
 def get_answer_menu (message):
     db_table_message_id_dell (user_id = message.from_user.id)
@@ -714,18 +865,23 @@ def get_answer_menu (message):
 #bot.send_message(message.chat.id,'You send me message')
 
 def dell_message (result):
+    print ("")
+    print ("def dell_message (result):")
     #bot.delete_message(query.message.chat.id, query.message.message_id)
-    print ('user_id = ', result.chat.id)
-    sql = "SELECT * FROM users_green WHERE user_id=?"
+    print ('  >> user_id = ', result.chat.id)
+    sql = '''SELECT *
+             FROM users_green
+             WHERE user_id = '%s'
+          '''
     cursor.execute(sql, [(result.chat.id)])
     #print(cursor.fetchall()) # or use fetchone()
     records = cursor.fetchall()
-    print(records)
-    print("Всего строк:  ", len(records))
+    print("  >> records: ", records)
+    print("  >> Всего строк:  ", len(records))
     for row in records:
-        print("Delete  ->  ID:", row[1], "  mess_id:", row[3])
+        print("    >> Delete  ->  ID:", row[1], "  mess_id:", row[3])
         bot.delete_message(row[1], row[3])   # удалим ранее присланые сообщения, т.к. пользователь отказался далее использовать бота
-        sql = "DELETE FROM users_green WHERE mess_id = ?"
+        sql = "DELETE FROM users_green WHERE mess_id = %s"
         cursor.execute(sql, [(row[3])])
         
     connection.commit()
@@ -734,12 +890,15 @@ def dell_message (result):
 
 # функция ответа пользователю при вводе № квартиры
 def get_answer_kv (query):
+    print ("")
+    print ("def get_answer_kv (query):")
+    
     bot.answer_callback_query(query.id)
 
     user_id_kv = query.from_user.id
     message_id_kv = query.message.message_id
     reply_markup_kv = query.message.reply_markup
-    print("Rename  ->  ID:", user_id_kv, "  mess_id:", message_id_kv)
+    print("  >> Rename  ->  ID:", user_id_kv, "  mess_id:", message_id_kv)
 
     text = query.message.text
     print(text)
@@ -748,13 +907,15 @@ def get_answer_kv (query):
             
 @bot.message_handler(content_types=['contact'])
 def contact(message):
+    print ("")
+    print ("def contact(message):")
     if message.contact is not None:
         bot.send_message(message.chat.id, 'Вы успешно отправили свой номер', reply_markup=telebot.types.ReplyKeyboardRemove())
   
         phonenumber = str(message.contact.phone_number)
         user_id = str(message.contact.user_id)
-        print ("phonenumber = ", phonenumber)
-        print ("user_id =", user_id)
+        print ("  >> phonenumber = ", phonenumber)
+        print ("  >> user_id =", user_id)
         
         db_table_menu_user_id (user_id=message.from_user.id, menu_id=1, keyword = "", flag=1) # добавляем индекс меню пользователя в базу
 
@@ -762,7 +923,10 @@ def contact(message):
         #cursor.execute(sql, user_id)
         #print(cursor.fetchone()) # or use fetchone()
  
-        sql = """UPDATE users SET phonenumber = ? WHERE user_id = ?"""
+        sql = '''UPDATE users
+                 SET phonenumber = %s
+                 WHERE user_id = %s
+              '''
         #cur.execute(sql, (nicjname, record_id))
         cursor.execute(sql, (phonenumber, user_id))
         connection.commit()
@@ -798,8 +962,11 @@ def get_text_messages(message):
         if not(message.from_user.is_bot):  # Проверяем является ользователь ботом или нет
             print ("    >>> Пользователь не бот.")
             # проверяем есть ли пользователь в базе зарегистрированных
-            sql_2 = "SELECT * FROM users WHERE user_id = :id"
-            cursor.execute(sql_2, {"id": message.from_user.id})
+            sql_2 = ''' SELECT *
+                        FROM users
+                        WHERE user_id = '%s';
+                    '''
+            cursor.execute(sql_2, (message.from_user.id,))
             records = cursor.fetchone()
             print ("  >> message.from_user.id = ", message.from_user.id)
             print ("  >> Есть ли пользователь в базе = ", records)
@@ -808,8 +975,11 @@ def get_text_messages(message):
                 # проверяем ввел ли пользователь слово из меню
                 text = str(message.text.lower())
                 print ("    >> text = ", text)
-                sql_3 = "SELECT * FROM menu_user WHERE name = :name"
-                cursor.execute(sql_3, {"name": text})
+                sql_3 = ''' SELECT *
+                            FROM menu_user
+                            WHERE name = %s;
+                        '''
+                cursor.execute(sql_3, (text,))
                 records_ans = cursor.fetchone()
                 print ("    >> select menu: ", records_ans)
                 #exit(0)
@@ -821,7 +991,10 @@ def get_text_messages(message):
                     print ("      >> text_answ: ", text_user)
                     next_menu = records_ans[5]
                     print ("      >> next_menu: ", next_menu)
-                    sql_2 = """UPDATE menu_user_id SET menu_id = ?, keyword = ? WHERE user_id = ?"""
+                    sql_2 = ''' UPDATE menu_user_id
+                                SET menu_id = %s, keyword = %s
+                                WHERE user_id = %s;
+                            '''
                     cursor.execute(sql_2, (next_menu, keyword, message.from_user.id))
                     connection.commit()
                     user_menu (message, text_user)
@@ -845,22 +1018,36 @@ def get_text_messages(message):
 
 def user_menu (message, text: str):
     print ("")
-    print ("user_menu (message, text: str):")
+    print ("def user_menu (message, text: str):")
     print ("  >> message: ", message)
     print ("  >> text: ", text)
-    sql = "SELECT * FROM menu_user_id WHERE user_id = ?"  # находим в таблице юзера
+    
+    # находим в таблице юзера
+    sql = ''' SELECT *
+              FROM menu_user_id
+              WHERE user_id = %s;
+          ''' 
     cursor.execute(sql, [(message.from_user.id)])
     records = cursor.fetchone()
     print ("  >> Пользователь: ", records[0], "  вошел в меню:", records[1], " <<")
     user_id = records[0]
     menu_id = records[1]
     
-    sql = "SELECT * FROM menu_user WHERE group_id = ?"  # находим в таблице меню список пунктов 
+    # находим в таблице меню список пунктов 
+    sql = ''' SELECT *
+              FROM menu_user
+              WHERE group_id = %s;
+          '''
     cursor.execute(sql, [(menu_id)])
     records = cursor.fetchall()
+    print ("  >> menu: ")
+    for row in records:
+        print ("     > ", row)
+        
+    print ("  >> menu_id: ", menu_id)    
     if not (menu_id == "0"):
         #print (records)
-        #print (len (records))
+        print ("  >> кол-во кнопок: ", len (records))
         # Если текст в меню не задан, то напишем прость "Выберите меню:"
         if (text == ""):
             text = 'Выберите меню:'
@@ -868,7 +1055,7 @@ def user_menu (message, text: str):
         #keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard = telebot.types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
         for row in records:
-            if row[7] == "1": # проверяем включено ли меню
+            if row[7] == True: # проверяем включено ли меню
                 print ("  >> info = ", row[1])
                 # Создаем кнопки с принятием решения
                 #keyboard.row (telebot.types.InlineKeyboardButton (text=row[1], callback_data = 'menu-'+row[2]))
@@ -899,15 +1086,22 @@ def type_mess(message):
     type_text = message.text
     print("    >> us_id = ", us_id)
     print("    >> type_text = ", type_text)
-    
-    sql_6 = "SELECT * FROM menu_user_id WHERE user_id = ?"  # находим в таблице меню список пунктов 
-    cursor.execute(sql_6, [(us_id)])
+    # находим в таблице меню список пунктов 
+    sql_6 = ''' SELECT *
+                FROM menu_user_id
+                WHERE user_id = %s;
+            ''' 
+    cursor.execute(sql_6, (us_id,))
     records_user = cursor.fetchone()
     print("  >> records_user = ", records_user)
     from_mess = records_user[2]
     print("    >> from_mess = ", from_mess)
     
-    sql_7 = "SELECT * FROM menu_user WHERE keyword = ?"  # находим в таблице меню список пунктов 
+    # находим в таблице меню список пунктов 
+    sql_7 = ''' SELECT *
+                FROM menu_user
+                WHERE keyword = %s;
+            ''' 
     cursor.execute(sql_7, [(from_mess)])
     records_from = cursor.fetchone()
     print("  >> records_from = ", records_from)
@@ -916,8 +1110,11 @@ def type_mess(message):
     
     
    # находим людей в базе данных кому адресовано сообщение
-    sql_5 = "SELECT * FROM admin_table WHERE " + from_mess + " = 'true'"  # находим в таблице меню список пунктов 
-    print ("  >> sql_5: ", sql_5)
+    # находим в таблице меню список пунктов 
+    sql_5 = ''' SELECT *
+                FROM admin_table
+                WHERE {} = true;
+            ''' .format(from_mess)
     cursor.execute(sql_5) #, {"row_id": from_mess})
     records_id = cursor.fetchall()
     print ("  >> records_id: ", records_id)
